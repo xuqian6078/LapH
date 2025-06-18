@@ -3,6 +3,7 @@ import torch.nn.functional as F
 import torch, math
 import numpy as np
 from .vision_transformer import *
+from .cross_modality_attention import CrossModalityAttention
 
 class Lap_Pyramid_Conv(nn.Module):
     def __init__(self, num_high=3):
@@ -214,6 +215,7 @@ class LapH(nn.Module):
         super(LapH, self).__init__()
         # Pre-processing
         self.lap_pyramid = Lap_Pyramid_Conv(num_high)
+        self.cross_attn = CrossModalityAttention(channels=1)
         # High frequency branch
         self.hf_branch_or = Fuse_HF(hf_dim=hf_dim, num_hdcb=3, res_prefix='or')
         self.hf_branch_12 = Fuse_HF(hf_dim=hf_dim, num_hdcb=3, res_prefix='12')
@@ -231,8 +233,10 @@ class LapH(nn.Module):
         high_fre_12, hf_features_12 = self.hf_branch_12(pyr_vi[-3], pyr_ir[-3])
         high_fre_or, hf_features_or = self.hf_branch_or(pyr_vi[-4], pyr_ir[-4])
 
-        # Low frequency branch
-        low_fre = self.lf_branch(pyr_vi[-1], pyr_ir[-1], [i for i in zip(hf_features_14, hf_features_12, hf_features_or)])
+        # Low frequency branch with cross-modality attention
+        att_vi, att_ir = self.cross_attn(pyr_vi[-1], pyr_ir[-1])
+        low_fre = self.lf_branch(att_vi, att_ir,
+                                 [i for i in zip(hf_features_14, hf_features_12, hf_features_or)])
 
         pyr_result = [high_fre_or, high_fre_12, high_fre_14, low_fre]
         fused_results = self.lap_pyramid.pyramid_recons(pyr_result)
